@@ -1,0 +1,343 @@
+---
+title: "Predicting Bike Rentals"
+author: "Joel Casillas, Ravinder Singh, and Ryan LeBon"
+date: "May 11, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+# Introduction
+
+This dataset contains the hourly and daily count of rental bikes between the year 2011 and 2012 in Capital bikeshare system with the corresponding weather and seasonal information. This dataset was obtained from [UC Irvines](https://archive.ics.uci.edu/ml/datasets/bike+sharing+dataset) machine learning repository. The data set contains integers and numerical values, so the task performed on this data set had to be regression. The data set contains 731 rows, and 16 columns total.
+
+[Capital Bikeshare](https://www.capitalbikeshare.com) is metro DC's bikeshare service, with 4,300 bikes and 500 stations across 5 jurisdictions: Washington, DC.; Arlington, VA; Alexandria, VA; Montgomery, MD and Fairfax County, VA. Designed for quick trips with convenience in mind, it’s a fun and affordable way to get around.
+
+Hypothesis:
+Our goal for this project is to predict the best features that lead to the most bicycle rentals.
+
+# Libraries Used
+```{r}
+
+set.seed(123)
+library(rpart)
+library(corrplot)
+library(e1071) 
+library(rpart.plot)
+library(cluster)
+library(fpc)
+source("lin-reg-util.R")
+source("class-util.R")
+
+```
+
+
+# Data Cleaning & Pre-Processing 
+There were two types of data sets from the start. A 'day' dataset and an 'hour' dataset. The data was clean from the start, there were no Na's or missing values in it. The only thing that was done, was that we removed the column called "instance". We removed it because it was just an index of the data, it wasn't a valuable feature. We also removed
+
+```{r}
+dat=read.csv("https://raw.githubusercontent.com/Ryanbbq/datascience_final/master/day.csv")
+hour=read.csv("https://raw.githubusercontent.com/Ryanbbq/datascience_final/master/hour.csv")
+```
+
+```{r}
+sum(is.na(dat))
+```
+
+
+```{r}
+str(dat)
+```
+
+# Data Exploration
+
+```{r}
+par(mfrow=c(2,1))
+Year2011 = dat[dat$yr==0,]
+hist(Year2011$cnt,col = "purple",main = "Total Amount of Bike rentals in 2011",xlab = "Rental Amounts")
+Year2012 = dat[dat$yr==1,]
+hist(Year2012$cnt,col = "red",main = "Total Amount of Bike rentals in 2012",xlab = "Rental Amounts")
+```
+
+
+We wanted to get an idea of how bike rentals compared between years 2011 and 2012. 2012 was much better in all aspects as seen by the plot above. 
+
+
+```{r}
+season_1 = hour[hour$season ==1,]
+season_2 = hour[hour$season ==2,]
+season_3 = hour[hour$season ==3,]
+season_4 = hour[hour$season ==4,]
+x1 = aggregate(cnt~hr , data = season_1 , mean)
+x2 = aggregate(cnt~hr , data = season_2 , mean)
+x3 = aggregate(cnt~hr , data = season_3 , mean)
+x4 = aggregate(cnt~hr , data = season_4 , mean)
+par(bg = 'gray89')
+plot(x1 , type = "l" , col = "firebrick2" , ylim =c(0 , 600) , xlim = c(0,23), lwd = 2 , main = "Rentals by season", las=1 , xaxt = "n" , ylab = "Bikes" , xlab = "Time of the day")
+axis(1, at = seq(0, 24, by = 1), las=1)
+lines(x2 , type = "l" , col ="orange" , lwd =2)
+lines(x3 , type = "l" , col ="chartreuse3" ,lwd =2)
+lines(x4 , type = "l" , col ="black" ,lwd =2)
+legend(1 ,600 ,c('Spring' , 'Summer' , 'Fall', 'Winter') , col = c("firebrick2","orange" , "chartreuse3" , "black"),lty= 1 ,pch = 16)
+
+```
+
+
+We have four seasons in numerical values such as, spring as 1 , summer as 2 , fall as 3 and winter as 4. We plotted the total rental sales for each season in this plot. We can clearly see that fall and summer has the highest sales as we expected.
+
+
+```{r}
+weather_1 = hour[hour$weathersit ==1,]
+weather_2 = hour[hour$weathersit ==2,]
+weather_3 = hour[hour$weathersit ==3,]
+weather_4 = hour[hour$weathersit ==4,]
+y1 = aggregate(cnt~hr , data = weather_1 , mean)
+y2 = aggregate(cnt~hr , data = weather_2 , mean)
+y3 = aggregate(cnt~hr , data = weather_3 , mean)
+y4 = aggregate(cnt~hr , data = weather_4 , mean)
+par(bg = 'gray89')
+plot(y1 , type = "l" , col = "firebrick2" , ylim =c(0 , 600) , xlim = c(0,23), lwd = 2 , main = "Rentals by Weather Condition", las=1 , xaxt = "n" , ylab = "Bikes" , xlab = "Time of the day")
+axis(1, at = seq(0, 24, by = 1), las=1)
+lines(y2 , type = "l" , col ="orange" , lwd =2)
+lines(y3 , type = "l" , col ="chartreuse3" ,lwd =2)
+lines(y4 , type = "l" , col ="black" ,lwd =2)
+legend(1 ,600 ,c('Clear' , 'Mist' , 'Light Snow', 'Heavy Rain') , col = c("firebrick2","orange" , "chartreuse3" , "black"),lty= 1 ,pch = 16)
+```
+
+
+We have each day's condition as clear, mist, little snow or heavy rain. Also, we have each day's condition as numeric values from 1 to 4. We were expecting to see most of the rental sales on clear days. As we expected, most of the rental sales were on a clear day.
+ 
+
+```{r}
+plot(dat$cnt~dat$mnth, pch=8, ylab="users", xlab="months",col="orangered",main="Rentals by month")
+```
+
+
+This is a plot of how many bikes were being rented during each month. As you can see the months that had the most users were on march(3) and september(9). Please note that for this plot we used the day data set and not the hour data set.
+
+
+```{r}
+boxplot(dat$cnt~dat$season,names=c("spring","summer","fall","winter"),ylab="users",col="orangered",main="Users by Season")
+```
+
+
+This is a boxplot of bikes that were being rented based on the season. We expected the most bikes to be rented during the summer but realized that the most bikes being rented was in the fall.
+
+
+```{r}
+boxplot(dat$cnt~dat$holiday, names=c("regular day","holiday"), ylab="users",col="orangered",main="Rentals on regular days vs holidays")
+```
+
+This is a boxplot of bikes that were rented on holidays and bikes that were rented on regular days.There were more users on regular days, but there was still a signficant amount of users on holidays.
+
+```{r}
+plot(cnt ~ temp,data=dat,col="orangered",main="Amount of bike rentals based on temperature",ylab="users",xlab="normalized temperature in celsius",pch=8,xlim=c(0,1))
+biketemp <- lm(cnt~temp,data=dat)
+abline(biketemp,col="blue",lty="dashed")
+mx  = mean(dat$temp)
+abline(v = mx, col = "blue",lty="dashed")
+
+```
+
+This is a plot of users renting bikes based on the normalized temperature in celsius. The x axis goes from 0 to 1, where 0 is the coldest and 1 is the hottest. As you can see the most bikes rented were between 0.4 and 0.6.
+
+```{r}
+plot(x=dat$registered,y=dat$casual,xlab = "Amount of Registered",ylab = "Amount of Casual",col=c("purple","cyan"),pch=16,main = "Amount of Casual vs Registered Bike Renters")
+legend("bottomright", 95, legend=c("Registered", "Casual"),col=c("purple", "cyan"),pch = 16)
+```
+
+
+This is a scatterplot showing the amount of casual bike renters compared to registered bike renters. There is almost twice as many registered bike renters than their is casual. This gives us an idea of how many renters are actually one time users or not.
+
+# Correlation Analysis
+```{r}
+
+bike_corr <- dat[,10:13]
+train_cor <- cor(bike_corr)
+corrplot(train_cor, method = 'color', addCoef.col="black")
+
+```
+
+
+This is a correlation matrix that gives us the confidence intervals. A confidence interval is a range of values so defined that there is a specified probability that the value of a parameter lies within it. This matrix shows that temp and atemp are the most correlated features in our dataset.
+
+
+# Cluster Analysis
+
+```{r}
+
+cluster_dat <- dat
+cluster_dat$dteday <- NULL
+cluster_dat$instant <- NULL
+cluster_dat$yr <- NULL
+num_clust <- 7
+bikes.myclust <- kmeans(cluster_dat,num_clust,algorithm="Lloyd",iter.max=100)
+#str(bikes.myclust)
+plotcluster(cluster_dat,bikes.myclust$cluster,pch=1,method="dc")
+
+```
+
+
+This cluster analysis plot distinguishes given classes. First k-means clustering was performed on the cluster data set using Lloyd's algorithm, it is an algorithm named after Stuart P. Lloyd for finding evenly spaced sets of points in subsets of Euclidean spaces and partitions of these subsets into well-shaped and uniformly sized convex cells. We used 7 clusters for this example. We then used the plotcluster() function from the library 'fpc' to plot the cluster. The x and y axis dc1 and dc2 represent discriminant coordinates which are referred to as 'canonical variates'. A canonical variate is a new variable (variate) formed by making a linear combination of two or more variates (variables) from a data set. A linear combination of variables is the same as a weighted sum of variables.
+
+
+```{r}
+
+good_or_bad <- bikes.myclust$totss / bikes.myclust$betweenss
+
+paste0("If the bss/tss is close to a score of 1, then kmeans performed well...Score:(",round(good_or_bad,3),")")
+
+```
+
+
+
+# Dendogram Analysis
+```{r}
+
+library(ape)
+dendo_dat <- dat
+bikes.use = dendo_dat[,-c(1,2)]
+bikes.use = scale(bikes.use)
+bikes.dist = dist(bikes.use)
+bikes.hclust = hclust(bikes.dist)
+plot(bikes.hclust,labels=dendo_dat$cnt,main='Dendogram from bicycle dataset',cex=0.3)
+plot(as.phylo(bikes.hclust), type = "fan")
+
+```
+
+This is a dendogram from the bicycle dataset. A dendograms is a tree diagram, that shows taxonomic relationships. However the dendogram had so many features that it was hard to compute exact values.
+
+
+```{r}
+dat = dat[,-1]
+dat = dat[,-14]
+dat = dat[,-13]
+dat = dat[,-1]
+dsets = split_data(dat, c(3,1))
+tr_dat = dsets[[1]]
+te_dat = dsets[[2]]
+```
+
+
+
+
+# Linear Regression Model
+```{r}
+fit = lm(cnt ~ ., data=tr_dat)  
+predicted = predict(fit, tr_dat)
+actual= tr_dat$cnt
+plot_predict_actual(predicted,actual,2000,title = "Predictions from Training Data")
+```
+
+
+This model is fitted using the best features to predict rentals of bikes in a day for the next year. This shows us that the model did pretty well on the training data, but that's expected, the real test is running it on test data.
+  
+  
+
+```{r}
+predicted3 = predict(fit, te_dat)
+actual3= te_dat$cnt
+plot_predict_actual(predicted3,actual3,2000,title = "Predictions from Test Data")
+```
+
+
+Here we ran our fitted model on our test data and as you can see, it did a decent job of predicting bike rentals in a day. There is alot of residual on some parts but for the most part, the dots are close to the fitted line.
+
+
+
+```{r}
+predicted = predict(fit, te_dat)
+errors = te_dat$cnt - predicted
+rmse = sqrt(mean(errors^2))
+paste0("The RMSE is ",round(rmse))
+```
+
+# Diagnosing the fitted model
+```{r}
+par(mfrow=c(2,2))
+plot(fit)
+```
+
+### Residuals vs. Fitted Plot
+
+There is a clear indication that their is some linearity, but throughout the line, the variance is high. The variance increases on the fitted line towards the end. 
+
+### Normal QQ Plot
+
+For the most part, the residuals on this plot are pretty normal. Towards the end is where the residual is high, and that might be due to the high variance towards the end of the fitted line in the previous plot.
+
+### Scale-location Plot
+
+We see a small increasing trend in residual variance towards the middle of the plot that runs through the end. This is indicated by the upward slope of the red line, which we can interpret as the standard deviation of the residuals at the given level of fitted value.
+
+### Residuals vs Leverage Plot
+
+There seems to be many outliers in this plot, because the trend for this is almost non-existent to the red line. You see no correlation at all.
+
+
+
+# Decision Trees Regression Model
+```{r}
+model2 = rpart(cnt~ holiday + temp + atemp + workingday + windspeed, data = tr_dat)
+prp(model2, extra= 1, varlen=-10,
+main="regression tree  on total bikes a day ",
+box.col="tan")
+```
+
+
+In this model, we have used a Regression Rree. We also decided to use the features such as temperature , windspeed and humidity. Also, temp and atemp features in this dataset are normalized in celsius. We splitted 75% of the data into training dataset and 25% into test dataset.
+  
+
+```{r}
+predicted = predict(model2, te_dat)
+actual =  te_dat$cnt
+errors = te_dat$cnt - predicted
+rmse = sqrt(mean(errors^2))
+rmse
+```
+
+
+We calculated the rmse of the Regression Tree model. We actually found out that the regression tree model didn't perform very well on this particular dataset by plotting predicted values and actual values.
+ 
+
+```{r}
+plot_predict_actual(predicted, actual, 2000,
+"regression tree rental sales prediction")
+
+```
+
+
+We actually found out that decision tree regression model didn't perform very well on this particular dataset by plotting predicted values vs actual values.
+
+
+
+# Comparison of Decision Tree Regression model and Linear Regression model
+
+```{r}
+par(mfrow=c(1,2))
+predicted = predict(model2, te_dat)
+actual =  te_dat$cnt
+errors = te_dat$cnt - predicted
+rmse = sqrt(mean(errors^2))
+hist(errors, col="red4", xlim=c(-10e3, 10e3),main = "Regression Tree Error")
+
+
+predicted = predict(fit, te_dat)
+errors = te_dat$cnt - predicted
+rmse = sqrt(mean(errors^2))
+errors = te_dat$cnt - predicted
+hist(errors, col="red4", xlim=c(-10e3, 10e3),main = "Linear Regression Error")
+
+```
+
+Here we decided to compare the models we used to predict bike rentals. These histograms show the errors of linear regression and decision tree regression. Because of these errors we can see that linear regression performed better on this particular dataset compared to decision tree regression.
+
+
+
+# Conclusion
+
+Based on our hypothesis we found out the that the top 3 features were seasons, temperature, and humidity which lead to a user renting out a bicycle. Linear regression performed well on this particular dataset compared to decision tree regression. Linear regression works really nicely when the data has a linear shape. In case the dataset didn't have linear shape then linear regression would not capture the non-linear features. Therefore, decision tree regression could have performed well than linear regression.
+
